@@ -641,14 +641,25 @@ end
 
 -- Crafting functions
 local function cleanup()
-    -- Clear craft container slots
+    -- Clear cursor first
+    mq.cmd('/autoinventory')
+    delay(config.craftDelay)
+    
+    -- Clear craft container slot 1
     mq.cmd('/itemnotify in pack9 1 leftmouseup')
     delay(config.craftDelay)
     mq.cmd('/autoinventory')
+    delay(config.craftDelay)
     
+    -- Clear craft container slot 2
     mq.cmd('/itemnotify in pack9 2 leftmouseup')
     delay(config.craftDelay)
     mq.cmd('/autoinventory')
+    delay(config.craftDelay)
+    
+    -- Final cursor clear
+    mq.cmd('/autoinventory')
+    delay(config.craftDelay)
 end
 
 local function craftTrophy(gemName, trophyName, gemID, barName, barID)
@@ -666,6 +677,9 @@ local function craftTrophy(gemName, trophyName, gemID, barName, barID)
     if isNavigating() then
         return false
     end
+    
+    -- Pre-cleanup: Make sure jewelry bag is empty before starting
+    cleanup()
     
     -- Clear inventory cursor
     mq.cmd('/autoinventory')
@@ -1175,13 +1189,14 @@ local function turnInTrophies()
             return
         end
         
-        -- Turn in items, 4 at a time with 2 second delay
+        -- Turn in items, 4 at a time with Give button clicks
         local totalTurnedIn = 0
         for _, itemData in ipairs(itemsToTurnIn) do
             local itemsGiven = 0
             while itemsGiven < itemData.count do
                 local batchSize = math.min(4, itemData.count - itemsGiven)
                 
+                -- Place items in trade window
                 for i = 1, batchSize do
                     print(string.format('\ay[Trophy]\ax Giving %s to Judge Marion (%d/%d)', itemData.name, itemsGiven + i, itemData.count))
                     
@@ -1189,10 +1204,15 @@ local function turnInTrophies()
                     mq.cmdf('/nomodkey /ctrlkey /itemnotify "%s" leftmouseup', itemData.name)
                     delay(500)
                     
-                    -- Give it to the target
+                    -- Place it in the trade window
                     mq.cmd('/click left target')
                     delay(500)
                 end
+                
+                -- Click the Give button to complete the transaction
+                print('\ay[Trophy]\ax Clicking Give button...')
+                mq.cmd('/notify GiveWnd GVW_Give_Button leftmouseup')
+                delay(1000)
                 
                 itemsGiven = itemsGiven + batchSize
                 totalTurnedIn = totalTurnedIn + batchSize
@@ -1234,6 +1254,23 @@ local function renderJewelryTab()
     ImGui.Separator()
     ImGui.Text(selectedTestName)
     ImGui.Separator()
+    
+    -- Check if Jeweler's Kit is in slot 9 (Pack9)
+    local jewelryKitInSlot9 = false
+    local slot9Item = mq.TLO.InvSlot[31].Item  -- Slot 31 is Pack9
+    if slot9Item and slot9Item() then
+        local itemName = slot9Item.Name()
+        if itemName and itemName == "Jeweler's Kit" then
+            jewelryKitInSlot9 = true
+        end
+    end
+    
+    if not jewelryKitInSlot9 then
+        ImGui.PushStyleColor(ImGuiCol.Text, 1, 0, 0, 1)  -- Red text
+        ImGui.Text("Jeweler's Kit not in slot 9")
+        ImGui.PopStyleColor()
+        ImGui.Separator()
+    end
     
     -- Trophy Quest Detection - Show regardless of test selection
     local hasSkill, skillMessage = checkJewelrySkill()
