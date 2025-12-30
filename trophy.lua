@@ -285,6 +285,66 @@ local config = {
                 required = 1
             }
         }
+    },
+    
+    -- Pottery tests
+    potteryTests = {
+        "Beginners Pottery Test",
+        "Freshmans Pottery Test"
+    },
+    
+    -- Pottery recipes organized by test
+    potteryRecipes = {
+        ["Beginners Pottery Test"] = {
+            {
+                name = "Unfired Small Container",
+                components = {
+                    {name = "Block of Clay", id = 16901, vendor = "Sculptor_Radee"},
+                    {name = "Small Jar Sketch", id = 16951, vendor = "Sculptor_Radee"},
+                    {name = "Water Flask", id = 13006, vendor = "Brewmaster_Berina00"}
+                },
+                required = 4
+            },
+            {
+                name = "Unfired Medium Container",
+                components = {
+                    {name = "Block of Clay", id = 16901, vendor = "Sculptor_Radee"},
+                    {name = "Medium Jar Sketch", id = 16952, vendor = "Sculptor_Radee"},
+                    {name = "Water Flask", id = 13006, vendor = "Brewmaster_Berina00"}
+                },
+                required = 2
+            },
+            {
+                name = "Unfired Ceramic Lining",
+                components = {
+                    {name = "Ceramic Lining Sketch", id = 16964, vendor = "Sculptor_Radee"},
+                    {name = "Small Block of Clay", id = 16900, vendor = "Sculptor_Radee"},
+                    {name = "Water Flask", id = 13006, vendor = "Brewmaster_Berina00"}
+                },
+                required = 4
+            },
+            {
+                name = "Dye Vial",
+                components = {
+                    {name = "Quality Firing Sheet", id = 16907, vendor = "Sculptor_Radee"},
+                    {name = "Unfired Dye Vial", id = 65470, vendor = "Sculptor_Radee"}
+                },
+                required = 2
+            },
+            {
+                name = "Unfired Pot",
+                components = {
+                    {name = "Large Block of Clay", id = 16902, vendor = "Sculptor_Radee"},
+                    {name = "Metal Bits", id = nil, vendor = nil},
+                    {name = "Pot Sketch", id = 16955, vendor = "Sculptor_Radee"},
+                    {name = "Water Flask", id = 13006, vendor = "Brewmaster_Berina00"}
+                },
+                required = 2
+            }
+        },
+        ["Freshmans Pottery Test"] = {
+            -- Recipes to be added
+        }
     }
 }
 
@@ -294,12 +354,18 @@ local showGUI = true
 local isRunning = false
 local buyingBrewingComponents = false
 local brewingTestToBuy = ""
+local buyingPotteryComponents = false
+local potteryTestToBuy = ""
 local currentStatus = "Idle"
 local currentStep = ""
 local progressData = {}
 local startTrophyQuest = false  -- Flag to trigger trophy quest
-local startTurnIn = false  -- Flag to trigger turn-in process
+local startPotteryQuest = false  -- Flag to trigger pottery quest
+local startBreweryQuest = false  -- Flag to trigger brewery quest
+local startTurnIn = false  -- Flag to trigger turn-in process (jewelry)
+local startBrewerTurnIn = false  -- Flag to trigger turn-in process (brewing)
 local selectedBrewingTest = 1  -- Default to first test (Beginners Brewer Test)
+local selectedPotteryTest = 1  -- Default to first test (Beginners Pottery Test)
 local selectedJewelryTest = 1  -- Default to first test (Beginners Jewelery Test)
 
 -- Function to initialize progress data based on selected test
@@ -416,6 +482,28 @@ local function checkJewelrySkill()
         return false, string.format("Jewelry Making skill at %d - need to skill up before trophy request (requires 50+)", skillLevel)
     else
         return true, string.format("Jewelry Making skill: %d (sufficient for trophy)", skillLevel)
+    end
+end
+
+-- Check Pottery skill level
+local function checkPotterySkill()
+    local skillLevel = mq.TLO.Me.Skill('Pottery')() or 0
+    
+    if skillLevel < 50 then
+        return false, string.format("Pottery skill at %d - not enough pottery skill to request trophy quest (requires 50+)", skillLevel)
+    else
+        return true, string.format("Pottery skill: %d (sufficient for trophy)", skillLevel)
+    end
+end
+
+-- Check Brewing skill level
+local function checkBrewingSkill()
+    local skillLevel = mq.TLO.Me.Skill('Brewing')() or 0
+    
+    if skillLevel < 50 then
+        return false, string.format("Brewing skill at %d - not enough brewing skill to request trophy quest (requires 50+)", skillLevel)
+    else
+        return true, string.format("Brewing skill: %d (sufficient for trophy)", skillLevel)
     end
 end
 
@@ -641,25 +729,14 @@ end
 
 -- Crafting functions
 local function cleanup()
-    -- Clear cursor first
-    mq.cmd('/autoinventory')
-    delay(config.craftDelay)
-    
-    -- Clear craft container slot 1
+    -- Clear craft container slots
     mq.cmd('/itemnotify in pack9 1 leftmouseup')
     delay(config.craftDelay)
     mq.cmd('/autoinventory')
-    delay(config.craftDelay)
     
-    -- Clear craft container slot 2
     mq.cmd('/itemnotify in pack9 2 leftmouseup')
     delay(config.craftDelay)
     mq.cmd('/autoinventory')
-    delay(config.craftDelay)
-    
-    -- Final cursor clear
-    mq.cmd('/autoinventory')
-    delay(config.craftDelay)
 end
 
 local function craftTrophy(gemName, trophyName, gemID, barName, barID)
@@ -677,9 +754,6 @@ local function craftTrophy(gemName, trophyName, gemID, barName, barID)
     if isNavigating() then
         return false
     end
-    
-    -- Pre-cleanup: Make sure jewelry bag is empty before starting
-    cleanup()
     
     -- Clear inventory cursor
     mq.cmd('/autoinventory')
@@ -1079,6 +1153,174 @@ local function main()
         startTrophyQuest = false  -- Reset flag after initiating quest
     end
     
+    -- Handle pottery quest
+    if startPotteryQuest then
+        currentStatus = "Getting Pottery Quest"
+        
+        -- Travel to Freeport West if not already there
+        if currentZone ~= 'freeportwest' then
+            currentStep = "Traveling to Freeport West"
+            print('\ay[Trophy]\ax Traveling to Freeport West for pottery quest...')
+            travelTo('freeportwest')
+            
+            -- Wait until we detect we're in Freeport West
+            currentStep = "Waiting for zone confirmation..."
+            print('\ay[Trophy]\ax Waiting for zone to be confirmed as freeportwest...')
+            while mq.TLO.Zone.ShortName() ~= 'freeportwest' do
+                mq.doevents()
+                delay(100)
+            end
+            
+            print('\ay[Trophy]\ax Arrived in Freeport West')
+            currentStep = "Arrived in Freeport West - Pausing 10 seconds"
+            
+            -- Pause for 10 seconds
+            print('\ay[Trophy]\ax Pausing for 10 seconds...')
+            delay(10000)
+            
+            -- Navigate to Event Coordinator Baublie Diggs
+            currentStep = "Navigating to Event Coordinator Baublie Diggs"
+            print('\ay[Trophy]\ax Navigating to Event Coordinator Baublie Diggs...')
+            mq.cmd('/nav spawn "Event Coordinator Baublie Diggs"')
+            
+            -- Wait while navigation is active
+            while isNavigating() do
+                mq.doevents()
+                delay(100)
+            end
+            
+            print('\ay[Trophy]\ax Navigation stopped, checking for NPC...')
+            
+            -- Check if NPC is within 20 distance
+            local npc = mq.TLO.Spawn('Event Coordinator Baublie Diggs')
+            if npc and npc.Distance() and npc.Distance() <= 20 then
+                currentStep = "Found Event Coordinator - Targeting"
+                print(string.format('\ay[Trophy]\ax Event Coordinator Baublie Diggs detected at distance %.1f', npc.Distance()))
+                
+                -- Target the NPC
+                mq.cmd('/target Event Coordinator Baublie Diggs')
+                print('\ay[Trophy]\ax Targeting Event Coordinator Baublie Diggs...')
+                
+                -- Wait 2 seconds
+                delay(2000)
+                
+                -- Say pottery
+                currentStep = "Speaking to Event Coordinator"
+                print('\ay[Trophy]\ax Saying "pottery" to Event Coordinator...')
+                mq.cmd('/say pottery')
+                
+                -- Wait a bit for dialogue to process
+                delay(3000)
+                
+                print('\ag[Trophy]\ax Pottery quest dialogue initiated')
+            else
+                print('\ar[Trophy]\ax Event Coordinator Baublie Diggs not found within 20 distance!')
+                currentStep = "Error: NPC not found"
+            end
+            
+            currentZone = 'freeportwest'
+            startPotteryQuest = false  -- Reset flag after initiating quest
+        end
+        
+        -- Return to PoK
+        currentStep = "Returning to PoK"
+        print('\ay[Trophy]\ax Traveling to PoK from Freeport')
+        travelTo('poknowledge')
+        currentZone = 'poknowledge'
+        
+        -- Stop here - quest complete
+        currentStatus = "Quest Complete"
+        currentStep = "Pottery quest obtained. Ready to craft."
+        print('\ag[Trophy]\ax Pottery quest complete!')
+        isRunning = false
+        startPotteryQuest = false
+        return
+    end
+    
+    -- Handle brewery quest
+    if startBreweryQuest then
+        currentStatus = "Getting Brewery Quest"
+        
+        -- Travel to Freeport West if not already there
+        if currentZone ~= 'freeportwest' then
+            currentStep = "Traveling to Freeport West"
+            print('\ay[Trophy]\ax Traveling to Freeport West for brewery quest...')
+            travelTo('freeportwest')
+            
+            -- Wait until we detect we're in Freeport West
+            currentStep = "Waiting for zone confirmation..."
+            print('\ay[Trophy]\ax Waiting for zone to be confirmed as freeportwest...')
+            while mq.TLO.Zone.ShortName() ~= 'freeportwest' do
+                mq.doevents()
+                delay(100)
+            end
+            
+            print('\ay[Trophy]\ax Arrived in Freeport West')
+            currentStep = "Arrived in Freeport West - Pausing 10 seconds"
+            
+            -- Pause for 10 seconds
+            print('\ay[Trophy]\ax Pausing for 10 seconds...')
+            delay(10000)
+            
+            -- Navigate to Event Coordinator Baublie Diggs
+            currentStep = "Navigating to Event Coordinator Baublie Diggs"
+            print('\ay[Trophy]\ax Navigating to Event Coordinator Baublie Diggs...')
+            mq.cmd('/nav spawn "Event Coordinator Baublie Diggs"')
+            
+            -- Wait while navigation is active
+            while isNavigating() do
+                mq.doevents()
+                delay(100)
+            end
+            
+            print('\ay[Trophy]\ax Navigation stopped, checking for NPC...')
+            
+            -- Check if NPC is within 20 distance
+            local npc = mq.TLO.Spawn('Event Coordinator Baublie Diggs')
+            if npc and npc.Distance() and npc.Distance() <= 20 then
+                currentStep = "Found Event Coordinator - Targeting"
+                print(string.format('\ay[Trophy]\ax Event Coordinator Baublie Diggs detected at distance %.1f', npc.Distance()))
+                
+                -- Target the NPC
+                mq.cmd('/target Event Coordinator Baublie Diggs')
+                print('\ay[Trophy]\ax Targeting Event Coordinator Baublie Diggs...')
+                
+                -- Wait 2 seconds
+                delay(2000)
+                
+                -- Say brewery
+                currentStep = "Speaking to Event Coordinator"
+                print('\ay[Trophy]\ax Saying "brewery" to Event Coordinator...')
+                mq.cmd('/say brewery')
+                
+                -- Wait a bit for dialogue to process
+                delay(3000)
+                
+                print('\ag[Trophy]\ax Brewery quest dialogue initiated')
+            else
+                print('\ar[Trophy]\ax Event Coordinator Baublie Diggs not found within 20 distance!')
+                currentStep = "Error: NPC not found"
+            end
+            
+            currentZone = 'freeportwest'
+            startBreweryQuest = false  -- Reset flag after initiating quest
+        end
+        
+        -- Return to PoK
+        currentStep = "Returning to PoK"
+        print('\ay[Trophy]\ax Traveling to PoK from Freeport')
+        travelTo('poknowledge')
+        currentZone = 'poknowledge'
+        
+        -- Stop here - quest complete
+        currentStatus = "Quest Complete"
+        currentStep = "Brewery quest obtained. Ready to craft."
+        print('\ag[Trophy]\ax Brewery quest complete!')
+        isRunning = false
+        startBreweryQuest = false
+        return
+    end
+    
     -- Handle trophy collection from event coordinator
     if currentZone == 'freeportwest' then
         currentStep = "Returning to PoK"
@@ -1189,14 +1431,13 @@ local function turnInTrophies()
             return
         end
         
-        -- Turn in items, 4 at a time with Give button clicks
+        -- Turn in items, 4 at a time with 2 second delay
         local totalTurnedIn = 0
         for _, itemData in ipairs(itemsToTurnIn) do
             local itemsGiven = 0
             while itemsGiven < itemData.count do
                 local batchSize = math.min(4, itemData.count - itemsGiven)
                 
-                -- Place items in trade window
                 for i = 1, batchSize do
                     print(string.format('\ay[Trophy]\ax Giving %s to Judge Marion (%d/%d)', itemData.name, itemsGiven + i, itemData.count))
                     
@@ -1204,15 +1445,10 @@ local function turnInTrophies()
                     mq.cmdf('/nomodkey /ctrlkey /itemnotify "%s" leftmouseup', itemData.name)
                     delay(500)
                     
-                    -- Place it in the trade window
+                    -- Give it to the target
                     mq.cmd('/click left target')
                     delay(500)
                 end
-                
-                -- Click the Give button to complete the transaction
-                print('\ay[Trophy]\ax Clicking Give button...')
-                mq.cmd('/notify GiveWnd GVW_Give_Button leftmouseup')
-                delay(1000)
                 
                 itemsGiven = itemsGiven + batchSize
                 totalTurnedIn = totalTurnedIn + batchSize
@@ -1236,6 +1472,122 @@ local function turnInTrophies()
     isRunning = false
 end
 
+-- Turn-in function for brewing trophies
+local function turnInBrewerTrophies()
+    print('\ag[Trophy]\ax Starting Brewer Turn-In process...')
+    currentStatus = "Brewer Turn-In"
+    
+    local currentZone = mq.TLO.Zone.ShortName()
+    
+    -- Travel to Freeport West if not already there
+    if currentZone ~= 'freeportwest' then
+        currentStep = "Traveling to Freeport West for turn-in"
+        print('\ay[Trophy]\ax Traveling to Freeport West...')
+        mq.cmdf('/travelto freeportwest')
+        
+        -- Wait while navigation is active
+        while isNavigating() do
+            mq.doevents()
+            delay(100)
+        end
+        
+        -- Wait until we detect we're in Freeport West
+        print('\ay[Trophy]\ax Waiting for zone to be confirmed as freeportwest...')
+        while mq.TLO.Zone.ShortName() ~= 'freeportwest' do
+            mq.doevents()
+            delay(100)
+        end
+        
+        print('\ay[Trophy]\ax Arrived in Freeport West')
+        currentStep = "Arrived in Freeport West - Pausing 10 seconds"
+        delay(10000)
+    end
+    
+    -- Navigate to Judge Marion
+    currentStep = "Navigating to Judge Marion"
+    print('\ay[Trophy]\ax Navigating to Judge Marion...')
+    mq.cmd('/nav spawn "Judge Marion"')
+    
+    -- Wait while navigation is active
+    while isNavigating() do
+        mq.doevents()
+        delay(100)
+    end
+    
+    print('\ay[Trophy]\ax Navigation stopped, checking for Judge Marion...')
+    
+    -- Check if Judge Marion is within 20 distance
+    local npc = mq.TLO.Spawn('Judge Marion')
+    if npc and npc.Distance() and npc.Distance() <= 20 then
+        currentStep = "Found Judge Marion - Turning in items"
+        print(string.format('\ay[Trophy]\ax Judge Marion detected at distance %.1f', npc.Distance()))
+        
+        -- Target the NPC
+        mq.cmd('/target Judge Marion')
+        delay(2000)
+        
+        -- Collect all brewing items to turn in from the selected test
+        local selectedTestName = config.brewingTests[selectedBrewingTest]
+        local recipes = config.brewingRecipes[selectedTestName]
+        local itemsToTurnIn = {}
+        
+        for _, recipe in ipairs(recipes) do
+            local count = findItemCount(recipe.name)
+            if count > 0 then
+                print(string.format('\ay[Trophy]\ax Found %d x %s to turn in', count, recipe.name))
+                table.insert(itemsToTurnIn, {name = recipe.name, count = count})
+            end
+        end
+        
+        if #itemsToTurnIn == 0 then
+            print('\ar[Trophy]\ax No brewing items found to turn in!')
+            currentStep = "No items to turn in"
+            startBrewerTurnIn = false
+            isRunning = false
+            return
+        end
+        
+        -- Turn in items, 4 at a time with 2 second delay
+        local totalTurnedIn = 0
+        for _, itemData in ipairs(itemsToTurnIn) do
+            local itemsGiven = 0
+            while itemsGiven < itemData.count do
+                local batchSize = math.min(4, itemData.count - itemsGiven)
+                
+                for i = 1, batchSize do
+                    print(string.format('\ay[Trophy]\ax Giving %s to Judge Marion (%d/%d)', itemData.name, itemsGiven + i, itemData.count))
+                    
+                    -- Pick up the item
+                    mq.cmdf('/nomodkey /ctrlkey /itemnotify "%s" leftmouseup', itemData.name)
+                    delay(500)
+                    
+                    -- Give it to the target
+                    mq.cmd('/click left target')
+                    delay(500)
+                end
+                
+                itemsGiven = itemsGiven + batchSize
+                totalTurnedIn = totalTurnedIn + batchSize
+                currentStep = string.format("Turned in %d items...", totalTurnedIn)
+                
+                -- Wait 2 seconds before next batch
+                if itemsGiven < itemData.count then
+                    delay(2000)
+                end
+            end
+        end
+        
+        print(string.format('\ag[Trophy]\ax Successfully turned in %d items to Judge Marion!', totalTurnedIn))
+        currentStep = string.format("Turn-in complete! (%d items)", totalTurnedIn)
+    else
+        print('\ar[Trophy]\ax Judge Marion not found within 20 distance!')
+        currentStep = "Error: Judge Marion not found"
+    end
+    
+    startBrewerTurnIn = false
+    isRunning = false
+end
+
 -- Jewelry Tab Content
 local function renderJewelryTab()
     -- Dropdown to select jewelry test
@@ -1255,24 +1607,18 @@ local function renderJewelryTab()
     ImGui.Text(selectedTestName)
     ImGui.Separator()
     
-    -- Check if Jeweler's Kit is in slot 9 (Pack9)
-    local jewelryKitInSlot9 = false
-    local slot9Item = mq.TLO.InvSlot[31].Item  -- Slot 31 is Pack9
-    if slot9Item and slot9Item() then
-        local itemName = slot9Item.Name()
-        if itemName and itemName == "Jeweler's Kit" then
-            jewelryKitInSlot9 = true
-        end
-    end
-    
-    if not jewelryKitInSlot9 then
-        ImGui.PushStyleColor(ImGuiCol.Text, 1, 0, 0, 1)  -- Red text
-        ImGui.Text("Jeweler's Kit not in slot 9")
+    -- Check for Intricate Jewelers Glass (final trophy) - Check this FIRST
+    local glassCount = findItemCount('Intricate Jewelers Glass')
+    if glassCount > 0 then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+        ImGui.SetWindowFontScale(1.5)
+        ImGui.Text("Jewelry Trophy Complete")
+        ImGui.SetWindowFontScale(1.0)
         ImGui.PopStyleColor()
-        ImGui.Separator()
+        return
     end
     
-    -- Trophy Quest Detection - Show regardless of test selection
+    -- Trophy Quest Detection - Show only if no trophy exists
     local hasSkill, skillMessage = checkJewelrySkill()
     local hasTrophy, trophyMessage = haveJeweler()
     local hasCard, cardMessage = checkForCard()
@@ -1294,17 +1640,6 @@ local function renderJewelryTab()
         
         ImGui.Unindent(20)
         ImGui.Separator()
-    end
-    
-    -- Check for Intricate Jewelers Glass (final trophy)
-    local glassCount = findItemCount('Intricate Jewelers Glass')
-    if glassCount > 0 then
-        ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
-        ImGui.SetWindowFontScale(1.5)
-        ImGui.Text("Jewelry Trophy Complete")
-        ImGui.SetWindowFontScale(1.0)
-        ImGui.PopStyleColor()
-        return
     end
     
     -- Status Section
@@ -1510,6 +1845,135 @@ local function renderJewelryTab()
     end
 end
 
+-- Buy pottery components from vendors
+local function buyPotteryComponents(testName)
+    local recipes = config.potteryRecipes[testName]
+    if not recipes or #recipes == 0 then
+        print('\ar[Trophy]\ax No recipes found for ' .. testName)
+        return
+    end
+    
+    -- Aggregate all components by vendor
+    local vendorItems = {
+        ["Sculptor_Radee"] = {},
+        ["Brewmaster_Berina00"] = {}
+    }
+    
+    -- Scan all recipes and aggregate component quantities needed
+    for _, recipe in ipairs(recipes) do
+        local finishedCount = findItemCount(recipe.name)
+        local stillNeeded = (recipe.required or 1) - finishedCount
+        
+        if stillNeeded > 0 then
+            for _, component in ipairs(recipe.components) do
+                -- Only process components from known vendors (skip nil/unknown vendors)
+                if component.vendor == "Sculptor_Radee" or component.vendor == "Brewmaster_Berina00" then
+                    local neededQty = (component.quantity or 1) * stillNeeded
+                    local currentCount = findItemCount(component.name)
+                    local toBuy = math.max(0, neededQty - currentCount)
+                    
+                    if toBuy > 0 then
+                        -- Check if this item already exists in vendor list
+                        local existingItem = nil
+                        for _, item in ipairs(vendorItems[component.vendor]) do
+                            if item.id == component.id then
+                                existingItem = item
+                                break
+                            end
+                        end
+                        
+                        if existingItem then
+                            existingItem.qty = existingItem.qty + toBuy
+                        else
+                            table.insert(vendorItems[component.vendor], {
+                                name = component.name,
+                                id = component.id,
+                                qty = toBuy
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Buy from Sculptor_Radee
+    if #vendorItems["Sculptor_Radee"] > 0 then
+        print('\ag[Trophy]\ax Navigating to Sculptor Radee...')
+        mq.cmd('/nav spawn Sculptor_Radee')
+        
+        -- Wait for nav to complete
+        while mq.TLO.Navigation.Active() do
+            mq.delay(100)
+        end
+        mq.delay(500)
+        
+        -- Target and open merchant
+        mq.cmd('/target Sculptor_Radee')
+        mq.delay(300)
+        mq.cmd('/click right target')
+        mq.delay(1000)
+        
+        -- Wait for merchant window
+        while not mq.TLO.Window('MerchantWnd').Open() do
+            mq.delay(100)
+        end
+        mq.delay(500)
+        
+        -- Buy all items from this vendor in one session
+        for _, item in ipairs(vendorItems["Sculptor_Radee"]) do
+            print(string.format('\ag[Trophy]\ax Buying %d x %s', item.qty, item.name))
+            local currentCount = findItemCount(item.name)
+            buyItem(item.name, currentCount + item.qty, false, item.id)
+        end
+        
+        -- Close merchant
+        mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup')
+        mq.delay(300)
+        
+        print('\ag[Trophy]\ax Finished purchasing from Sculptor Radee')
+    end
+    
+    -- Buy from Brewmaster_Berina00
+    if #vendorItems["Brewmaster_Berina00"] > 0 then
+        print('\ag[Trophy]\ax Navigating to Brewmaster Berina...')
+        mq.cmd('/nav spawn Brewmaster_Berina00')
+        
+        -- Wait for nav to complete
+        while mq.TLO.Navigation.Active() do
+            mq.delay(100)
+        end
+        mq.delay(500)
+        
+        -- Target and open merchant
+        mq.cmd('/target Brewmaster_Berina00')
+        mq.delay(300)
+        mq.cmd('/click right target')
+        mq.delay(1000)
+        
+        -- Wait for merchant window
+        while not mq.TLO.Window('MerchantWnd').Open() do
+            mq.delay(100)
+        end
+        mq.delay(500)
+        
+        -- Buy all items from this vendor in one session
+        for _, item in ipairs(vendorItems["Brewmaster_Berina00"]) do
+            print(string.format('\ag[Trophy]\ax Buying %d x %s', item.qty, item.name))
+            local currentCount = findItemCount(item.name)
+            buyItem(item.name, currentCount + item.qty, false, item.id)
+        end
+        
+        -- Close merchant
+        mq.cmd('/nomodkey /notify MerchantWnd MW_Done_Button leftmouseup')
+        mq.delay(300)
+        
+        print('\ag[Trophy]\ax Finished purchasing from Brewmaster Berina')
+    end
+    
+    print('\ag[Trophy]\ax Pottery component purchase complete!')
+end
+
 -- Buy brewing components from vendors
 local function buyBrewingComponents(testName)
     local recipes = config.brewingRecipes[testName]
@@ -1666,6 +2130,42 @@ local function renderBrewingTab()
         return
     end
     
+    -- Check Brewing skill
+    local hasSkill, skillMessage = checkBrewingSkill()
+    if hasSkill then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+        ImGui.Text(skillMessage)
+        ImGui.PopStyleColor()
+    else
+        ImGui.PushStyleColor(ImGuiCol.Text, 1, 0, 0, 1)
+        ImGui.Text(skillMessage)
+        ImGui.PopStyleColor()
+    end
+    
+    ImGui.Separator()
+    
+    -- Quest button
+    ImGui.PushStyleColor(ImGuiCol.Text, 1, 0.5, 0, 1)
+    ImGui.Text("Brewery Quest:")
+    ImGui.PopStyleColor()
+    ImGui.Indent(20)
+    ImGui.TextColored(0.9, 0.7, 0, 1, "Click the button below to get the brewery quest in Freeport West.")
+    ImGui.Indent(-20)
+    
+    if not isRunning then
+        if ImGui.Button("Get Brewery Quest", 220, 40) then
+            print('\ag[Trophy]\ax Getting brewery quest...')
+            startBreweryQuest = true
+            isRunning = true
+        end
+    else
+        ImGui.PushStyleColor(ImGuiCol.Button, 1, 0, 0, 1)
+        ImGui.Button("Working...", 220, 40)
+        ImGui.PopStyleColor()
+    end
+    
+    ImGui.Separator()
+    
     local recipes = config.brewingRecipes[selectedTestName]
     
     if not recipes or #recipes == 0 then
@@ -1759,6 +2259,12 @@ local function renderBrewingTab()
             buyingBrewingComponents = true
             brewingTestToBuy = selectedTestName
         end
+        ImGui.SameLine()
+        if ImGui.Button("Turn-In", 100, 40) then
+            print('\ag[Trophy]\ax Brewer Turn-In button pressed...')
+            startBrewerTurnIn = true
+            isRunning = true
+        end
     else
         ImGui.PushStyleColor(ImGuiCol.Button, 0, 0.5, 0, 1)
         ImGui.Button("Buying Components...", 220, 40)
@@ -1766,6 +2272,172 @@ local function renderBrewingTab()
     end
     
     ImGui.TextColored(0.9, 0.7, 0, 1, "Brewing automation coming soon!")
+end
+
+-- Pottery Tab Content
+local function renderPotteryTab()
+    -- Dropdown to select pottery test
+    ImGui.Text("Select Pottery Test:")
+    local changed = false
+    selectedPotteryTest, changed = ImGui.Combo("##PotteryTest", selectedPotteryTest, config.potteryTests, #config.potteryTests)
+    
+    local selectedTestName = config.potteryTests[selectedPotteryTest]
+    
+    ImGui.Separator()
+    ImGui.Text(selectedTestName)
+    ImGui.Separator()
+    
+    -- Check for Beginner Potter Trophy or Freshman Potter Trophy
+    local beginnerTrophyCount = findItemCount('Beginner Potter Trophy')
+    local freshmanTrophyCount = findItemCount('Freshman Potter Trophy')
+    local journeymanTrophyCount = findItemCount('Journeyman Potter Trophy')
+    local expertTrophyCount = findItemCount('Expert Potter Trophy')
+    if beginnerTrophyCount > 0 or freshmanTrophyCount > 0 or journeymanTrophyCount > 0 or expertTrophyCount > 0 then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+        ImGui.SetWindowFontScale(1.5)
+        ImGui.Text("Pottery Trophy Complete")
+        ImGui.SetWindowFontScale(1.0)
+        ImGui.PopStyleColor()
+        return
+    end
+    
+    -- Check Pottery skill
+    local hasSkill, skillMessage = checkPotterySkill()
+    if hasSkill then
+        ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+        ImGui.Text(skillMessage)
+        ImGui.PopStyleColor()
+    else
+        ImGui.PushStyleColor(ImGuiCol.Text, 1, 0, 0, 1)
+        ImGui.Text(skillMessage)
+        ImGui.PopStyleColor()
+    end
+    
+    ImGui.Separator()
+    
+    -- Quest button
+    ImGui.PushStyleColor(ImGuiCol.Text, 1, 0.5, 0, 1)
+    ImGui.Text("Pottery Quest:")
+    ImGui.PopStyleColor()
+    ImGui.Indent(20)
+    ImGui.TextColored(0.9, 0.7, 0, 1, "Click the button below to get the pottery quest in Freeport West.")
+    ImGui.Indent(-20)
+    
+    if not isRunning then
+        if ImGui.Button("Get Pottery Quest", 220, 40) then
+            print('\\ag[Trophy]\\ax Getting pottery quest...')
+            startPotteryQuest = true
+            isRunning = true
+        end
+    else
+        ImGui.PushStyleColor(ImGuiCol.Button, 1, 0, 0, 1)
+        ImGui.Button("Working...", 220, 40)
+        ImGui.PopStyleColor()
+    end
+    
+    ImGui.Separator()
+    
+    local recipes = config.potteryRecipes[selectedTestName]
+    
+    if not recipes or #recipes == 0 then
+        ImGui.TextColored(0.9, 0.7, 0, 1, "Recipes for this test have not been added yet.")
+        ImGui.TextColored(0.7, 0.7, 0.7, 1, "Check back later for updates!")
+        return
+    end
+    
+    -- Recipe list section
+    ImGui.PushStyleColor(ImGuiCol.Text, 1, 0.5, 0, 1)
+    ImGui.Text("Pottery Recipes:")
+    ImGui.PopStyleColor()
+    
+    ImGui.BeginChild("PotteryRecipeList", 0, 380, true)
+    if recipes then
+        for _, recipe in ipairs(recipes) do
+            local recipeCount = findItemCount(recipe.name)
+            local isRecipeComplete = recipeCount >= recipe.required
+            
+            -- Recipe name with count vs required
+            if isRecipeComplete then
+                ImGui.PushStyleColor(ImGuiCol.Text, 0, 1, 0, 1)
+                ImGui.Text(string.format("[%d/%d] %s", recipeCount, recipe.required, recipe.name))
+                ImGui.PopStyleColor()
+            elseif recipeCount > 0 then
+                ImGui.PushStyleColor(ImGuiCol.Text, 1, 1, 0, 1)
+                ImGui.Text(string.format("[%d/%d] %s", recipeCount, recipe.required, recipe.name))
+                ImGui.PopStyleColor()
+            else
+                ImGui.PushStyleColor(ImGuiCol.Text, 1, 0, 0, 1)
+                ImGui.Text(string.format("[%d/%d] %s", recipeCount, recipe.required, recipe.name))
+                ImGui.PopStyleColor()
+            end
+            
+            -- Component list (only show if recipe is NOT complete)
+            if not isRecipeComplete and recipe.components and #recipe.components > 0 then
+                ImGui.Indent(20)
+                ImGui.PushStyleColor(ImGuiCol.Text, 0.7, 0.7, 1, 1)
+                ImGui.Text("Components:")
+                ImGui.PopStyleColor()
+                ImGui.Indent(10)
+                for _, component in ipairs(recipe.components) do
+                    local quantityText = ""
+                    if component.quantity and component.quantity > 1 then
+                        quantityText = string.format(" x%d", component.quantity)
+                    end
+                    
+                    local idText = ""
+                    if component.id then
+                        idText = string.format(" (ID: %d)", component.id)
+                    end
+                    
+                    local vendorText = ""
+                    if component.vendor then
+                        vendorText = string.format(" [%s]", component.vendor)
+                    end
+                    
+                    -- Check inventory for component
+                    local componentCount = findItemCount(component.name)
+                    if componentCount > 0 then
+                        local neededQty = (component.quantity or 1) * recipe.required
+                        if componentCount >= neededQty then
+                            ImGui.TextColored(0, 1, 0, 1, string.format("%s [Have: %d]%s%s%s", 
+                                component.name, componentCount, quantityText, idText, vendorText))
+                        else
+                            ImGui.TextColored(1, 1, 0, 1, string.format("%s [Have: %d, Need: %d]%s%s", 
+                                component.name, componentCount, neededQty, idText, vendorText))
+                        end
+                    else
+                        ImGui.TextColored(0.9, 0.9, 0.9, 1, component.name .. quantityText .. idText .. vendorText)
+                    end
+                end
+                ImGui.Unindent(10)
+                ImGui.Unindent(20)
+            end
+            
+            ImGui.Spacing()
+            ImGui.Separator()
+            ImGui.Spacing()
+        end
+    end
+    ImGui.EndChild()
+    
+    ImGui.Separator()
+    
+    -- Buy Components Button
+    if not buyingPotteryComponents then
+        if ImGui.Button("Buy Components", 220, 40) then
+            print('\ag[Trophy]\ax Starting component purchase for ' .. selectedTestName)
+            buyingPotteryComponents = true
+            potteryTestToBuy = selectedTestName
+        end
+    else
+        ImGui.PushStyleColor(ImGuiCol.Button, 0, 0.5, 0, 1)
+        ImGui.Button("Buying Components...", 220, 40)
+        ImGui.PopStyleColor()
+    end
+    
+    ImGui.Separator()
+    
+    ImGui.TextColored(0.9, 0.7, 0, 1, "Pottery automation coming soon!")
 end
 
 local function renderGUI()
@@ -1801,6 +2473,11 @@ local function renderGUI()
                 ImGui.EndTabItem()
             end
             
+            if ImGui.BeginTabItem("Pottery") then
+                renderPotteryTab()
+                ImGui.EndTabItem()
+            end
+            
             ImGui.EndTabBar()
         end
     end
@@ -1822,6 +2499,12 @@ while guiOpen do
         hasRunMain = true
         if startTurnIn then
             turnInTrophies()
+        elseif startBrewerTurnIn then
+            turnInBrewerTrophies()
+        elseif startPotteryQuest then
+            main()  -- Pottery quest uses main() to handle quest logic
+        elseif startBreweryQuest then
+            main()  -- Brewery quest uses main() to handle quest logic
         else
             main()
         end
@@ -1833,6 +2516,13 @@ while guiOpen do
         buyBrewingComponents(brewingTestToBuy)
         buyingBrewingComponents = false
         brewingTestToBuy = ""
+    end
+    
+    -- Handle pottery component purchases
+    if buyingPotteryComponents then
+        buyPotteryComponents(potteryTestToBuy)
+        buyingPotteryComponents = false
+        potteryTestToBuy = ""
     end
     
     delay(50)
